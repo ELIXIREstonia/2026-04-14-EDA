@@ -1,0 +1,202 @@
+---
+title: "Elixir EDA Practice"
+author: "Priit Adler"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r}
+# load the required libraries
+library(tidyverse)
+```
+
+## Introduction
+
+In this practice session, you will apply the concepts learned in the previous chapters to perform EDA on the Islander dataset. Follow the guided tour through the EDA process, and complete the tasks provided.
+
+## Step 1: Understand the Data Context
+
+Before diving into the data, it's essential to understand the context:  
+- **Objective**: What is the goal of the analysis?  
+- **Data Source**: Where does the data come from?  
+- **Data Collection Method**: How was the data collected?  
+- **Variables**: What are the variables in the dataset, and what do they represent?  
+
+### About the Islander Dataset
+
+#### [Memory Test on Drugged Islanders Data](https://www.kaggle.com/code/shashwatwork/analysis-of-islanders-data/)
+
+Classification of Anti-Anxiety Medicine on Novel Islanders grouped by Happy or Sad Memory Priming  
+Drugs of interest (known-as) [Dosage 1, 2, 3]:  
+- A - Alprazolam (Xanax, Long-term) [1mg/3mg/5mg]  
+- T - Triazolam (Halcion, Short-term) [0.25mg/0.5mg/0.75mg]  
+- S - Sugar Tablet (Placebo) [1 tab/2tabs/3tabs]
+
+Dosages follow a 1:1 ratio to ensure validity
+
+Happy or Sad memories were primed 10 minutes prior to testing  
+Participants tested every day for 1 week to mimic addiction
+
+
+### Task 1: Load and Inspect the Data
+
+Start by loading the dataset and inspecting its structure. The `_mod` flavor of the dataset has been modified to include some missing values and peculiarities.
+
+```{r}
+# Load the dataset
+data <- read_tsv("data/Islander_data_mod.tsv", show_col_types = FALSE)
+
+# Inspect the structure of the dataset
+str(data)
+```
+
+**Task**: Add code to display the first few rows of the dataset and summarize the dataset.
+
+```{r}
+# Display the first few rows (hint: use head() function)
+
+
+# Summarize the dataset
+# (hint: use summary() function or dplyr's
+#  mutate() and summarise() functions)
+
+```
+
+## Step 2: Data Cleaning
+
+Data cleaning is the process of preparing the data for analysis. This step includes handling missing values, removing duplicates, correcting errors, and transforming data types.
+
+### Task 2: Handle Missing Values
+
+Identify and handle missing values in the dataset. The 'Islander_data_mod.tsv' file contains some missing values represented as 'NA'. One could be rescued if you have good grasp of the data.
+
+```{r}
+# Check for missing values
+sum(is.na(data))
+
+# Identify which rows have missing values
+# (hint: rowSums(is.na(data))
+
+# Which rows could you fix?
+
+# Which rows is better to remove? (hint: complete.cases())
+
+```
+
+## Step 3: Initial Data Exploration
+
+Perform an initial exploration to get a sense of the data. This includes calculating summary statistics, creating frequency tables, and using basic visualizations.
+
+### Task 3: Summary Statistics and Visualizations
+
+Calculate summary statistics for each column in the data. Are there any columns with potential outliers or unusual values?
+
+```{r}
+# Summary statistics for age
+summary(data$age)
+
+# Frequency table for Happy_Sad_group
+table(data$Dosage)
+
+# Histogram for age
+ggplot(data, aes(x = age)) + geom_histogram(binwidth = 2)
+
+# Bar chart for Happy_Sad_group
+ggplot(data, aes(x = Happy_Sad_group)) + geom_bar()
+
+# Continue with other columns and plots to get a good sense of the data,
+# create new code chunks as needed.
+```
+Did you find the peculiar line? What may be the cause? Can you fix it?
+
+Can you identify or have a good guess what distribution each of the numerical columns may have?
+
+## Step 4: Data Normalization
+
+Normalization is the process of scaling numerical data to a standard range. This step is important when the data has different units or scales.
+
+### Task 4: Consider Normalization
+
+Consider whether any of the columns in our dataset need normalization. Even if you think that no data needs normalization, try applying Z-score transformation to the `Diff` column. It is good practice not to overwrite the original data. Just create a new column named `Diff_Z` for the transformed data.
+
+```{r}
+# Apply Z-score transformation to the Diff column (hint: scale() function)
+
+```
+
+
+## Step 5: Detailed Data Exploration and Identify Patterns
+
+Dive deeper into the data to uncover patterns and relationships. This includes correlation analysis, cross-tabulation, and advanced visualizations.
+
+### Task 5: Explore relationships between variables
+
+Start combining different variables and see how they relate to each other. Especially focus on the relationships between `Diff` and grouping variables. You can combine more than two variables in one plot.
+
+```{r}
+# Does age and Diff score correlate?
+
+# Try to figure out what are the combinations of variables that explain
+# the most of the variance in `Diff` score.
+
+ggplot(data, aes(x = Drug, y = Diff)) + geom_violin(aes(fill = Drug))
+# Can you visualise `Drug` vs `Diff` by `Dosage`?
+
+# Explore the Data-to-Viz website for more ideas on visualisations
+```
+
+**Task**: Run the following code and create a mosaic plot. What insights can you gain from this visualization? 
+
+```{r}
+# Mosaic plot for Drug and Happy_Sad_group
+ggplot(data) +
+  geom_mosaic(aes(weight = Diff, x = product(Drug), fill = Happy_Sad_group))
+```
+
+#### `Explore` package
+
+The `Explore` package is a tool meant for exploratory data analysis. It provides a set of functions that help you explore your data and generate insights. The package is designed to be user-friendly and easy to use, making it ideal for beginners and experienced users alike. Read [more](https://cran.r-project.org/web/packages/explore/vignettes/explore.html).
+
+Try it out by installing the package and running the following code:
+```{r}
+# Install the Explore package; might take a while
+install.packages("explore")
+
+# Load the Explore package
+library(explore)
+
+# Run the Explore function on the dataset
+explore(data)
+```
+
+## Step 6: Formulate Hypotheses
+
+Based on your exploration, formulate hypotheses about the data. Summarize preliminary insights and observations.
+
+### Task 6: Formulate Hypotheses
+
+Formulate hypotheses based on your findings and document them in the Rmarkdown document.
+
+```{r}
+# Example hypothesis
+# Hypothesis: Higher dosage of 'A' has a greater effect on memory score
+#  for subjects over 50 years old.
+```
+
+**Task**: Add your own hypotheses and document them.
+
+## Conclusion
+
+Once you have completed the tasks, save your Rmarkdown document. You can then share your work with others or use it as a reference for future projects.
+
+By following these steps and completing the tasks, you will gain hands-on experience with EDA and reinforce the concepts covered in the workshop. Good luck!

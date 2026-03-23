@@ -1,0 +1,67 @@
+site_name: ELIXIR Training Lesson on Exploratory Data Analysis
+nav:
+    - About: index.md
+    - Course Content:
+      - "Introduction": chapters/01_introduction.md
+      - "Workflow": chapters/02_EDA_process.md
+      - "Practice": chapters/03_practice.md
+      # - "References": chapters/references.md
+      - "Grammar of Graphics": chapters/05_grammar_of_graphics.md
+    # - "Follow up training": follow_up_training.md
+
+theme:
+  name: material
+  logo: assets/images/white-orange-logo.png
+  favicon: assets/images/elixir_favicon.ico
+  custom_dir: overrides
+  features:
+    - navigation.top
+    - navigation.footer
+    - toc.integrate
+  font: 
+    text: Lato
+
+# Repository
+repo_name: ELIXIREstonia/2025-01-29-EDA
+repo_url: https://github.com/ELIXIREstonia/2025-01-29-EDA
+edit_uri: edit/main/docs/
+
+plugins:
+  - tags:
+      tags_file: keywords.md
+  - search
+  - bibtex:
+      bib_file: "references.bib"
+  - mkdocs-video # embed videos to the docs
+
+  
+# Footer
+copyright: By the ELIXIR Training Platform
+
+markdown_extensions:
+  - abbr
+  - def_list
+  - footnotes
+  - tables
+  - admonition
+  - codehilite:
+      guess_lang: false
+  - sane_lists
+  - smarty
+  - toc:
+      toc_depth: 3
+  - pymdownx.superfences
+  - attr_list
+  - pymdownx.tabbed
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+      options:
+        custom_icons:
+          - overrides/.icons
+  - neoteroi.cards
+
+extra_css:
+  - stylesheets/extra.css
+  - stylesheets/neoteroi-mkdocs.css
