@@ -1,0 +1,836 @@
+---
+title: "Exploratory Data Analysis (EDA) with R"
+author: ""
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    theme: flatly
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+```{r libraries}
+library(tidyverse)
+```
+
+------------------------------------------------------------------------
+
+# 1. Introduction to EDA
+
+## What is EDA?
+
+Exploratory Data Analysis (EDA) is an approach to analyzing datasets promoted by the statistician **John Tukey** in the 1970s. The core idea is to *explore* data — to let the data surprise you — before imposing any model or hypothesis.
+
+EDA is best described as a **state of mind**: an iterative cycle of:
+
+1.  Generate a question about your data
+2.  Search for answers through visualization, transformation, and summary
+3.  Use what you learn to refine your questions or generate new ones
+
+Repeat. The goal is to understand your data well enough to decide what questions are worth asking — and how to ask them rigorously.
+
+> **Important:** Hypothesis testing and experimental design should ideally be decided *before* data collection. EDA is not a substitute for pre-registered hypotheses — it is a tool for understanding what you have and for generating ideas to test on *new* data.
+
+## Two Foundational Questions
+
+Every EDA boils down to two types of question:
+
+-   **Variation**: What pattern of variation occurs *within* each variable?
+-   **Covariation**: What pattern of covariation occurs *between* variables?
+
+Variation describes the spread and shape of a single variable. Covariation describes how two or more variables move together. Most of what follows is an attempt to answer these questions systematically.
+
+## Objectives of EDA
+
+1.  Enable unexpected discoveries in the data
+2.  Suggest hypotheses about the causes of observed phenomena
+3.  Assess assumptions on which statistical inference will be based
+4.  Support the selection of appropriate statistical tools and techniques
+5.  Provide a basis for further data collection through surveys and experiments
+
+## Why Visualize Before Modeling? — Anscombe's Quartet
+
+A classic argument for visualizing in EDA is **Anscombe's Quartet**: four datasets with identical summary statistics (mean, variance, correlation, regression line) that look completely different when plotted.
+
+```{r anscombe}
+anscombe_long <- anscombe %>%
+  mutate(obs = row_number()) %>%
+  pivot_longer(
+    cols = everything(),
+    names_to = c(".value", "set"),
+    names_pattern = "([xy])(\\d)"
+  )
+
+anscombe_long = na.omit(anscombe_long)
+
+ggplot(anscombe_long, aes(x = x, y = y)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE, color = "steelblue") +
+  facet_wrap(~set, labeller = label_both) +
+  labs(
+    title = "Anscombe's Quartet",
+    subtitle = "Four datasets with nearly identical summary statistics — but very different distributions"
+  ) +
+  theme_minimal()
+```
+
+All four datasets share the same mean of x (\~9), mean of y (\~7.5), variance of x (\~11), variance of y (\~4.1), and regression line (*y* = 3 + 0.5*x*). Yet they are clearly different. Always visualize your data.
+
+## A Note on Circular Reasoning in Hypothesis Testing
+
+When hypotheses are suggested by a dataset and then tested on the *same* dataset, this is circular reasoning. Something appears true in a limited sample, we hypothesize it holds in general, then confirm it with the same data — this inflates false positive rates dramatically. Any hypothesis generated from EDA must be tested on a dataset that was not used to generate it.
+
+------------------------------------------------------------------------
+
+# 2. Types of Data
+
+Choosing the right visualization or statistical method depends on what kind of data you have.
+
+## Numerical Data
+
+Numerical data represents quantities:
+
+-   **Continuous**: Can take any value within a range (e.g., body mass, temperature, enzyme activity)
+-   **Discrete**: Can only take specific values (e.g., number of cells counted, tablet dose in whole units)
+
+## Categorical Data
+
+Categorical data represents groups or characteristics:
+
+-   **Nominal**: Categories without a natural order (e.g., drug type, species, tissue type)
+-   **Ordinal**: Categories with a natural order (e.g., dosage level, disease severity, satisfaction rating)
+
+## Choosing a Visualization
+
+The type of data determines which visualization is appropriate. A quick reference:
+
+| Data type                 | Typical visualizations                      |
+|---------------------------|---------------------------------------------|
+| One numerical             | Histogram, density plot, boxplot            |
+| One categorical           | Bar chart, frequency table                  |
+| Numerical × numerical     | Scatterplot, hexbin, line plot              |
+| Numerical × categorical   | Boxplot, violin, frequency polygon          |
+| Categorical × categorical | Mosaic plot, heatmap of counts, grouped bar |
+
+When in doubt, consult [Data-to-Viz](https://www.data-to-viz.com/) for decision guidance and [R Graph Gallery](https://www.r-graph-gallery.com/) for R code examples.
+
+### Concept Check
+
+**Q: What is the difference between continuous and discrete numerical data?**
+
+Continuous data can take any value within a range (e.g., height = 172.3 cm), while discrete data can only take specific values (e.g., number of cell divisions = 4). In practice, the distinction affects which visualizations are most appropriate, though both are treated similarly in R.
+
+**Q: You have measured the diversity of bacterial species across 20 soil samples from different locations. What data type is "species richness" (number of distinct species)? What about "dominant phylum"?**
+
+Species richness is discrete numerical data. Dominant phylum is nominal categorical data — there is no natural ordering among bacterial phyla.
+
+------------------------------------------------------------------------
+
+# 3. The EDA Process
+
+The EDA process is **iterative**, not linear. You will revisit earlier steps as you learn more. The steps below provide a structured starting point.
+
+## Step 1: Understand the Data Context
+
+Before writing any code, understand the context of your data:
+
+-   **Objective**: What is the goal of the analysis?
+-   **Data Source**: Where does the data come from?
+-   **Data Collection Method**: How was the data collected, and what are the potential sources of bias?
+-   **Variables**: What do the variables represent, and what are their expected ranges?
+
+### About the Dataset: Memory Test on Drugged Islanders
+
+> **A note on dataset choice for this workshop:** The Islander dataset comes from a pharmacological experiment — fitting for a biological audience. It has categorical grouping variables (drug, dosage, memory priming) and numerical outcome variables (memory scores), giving good practice with the most common EDA tasks. For the dimensionality reduction section later, we switch to the `palmerpenguins` dataset, which has more biological measurements and is better suited for that purpose.
+
+The dataset records the effect of anti-anxiety medication on memory scores, grouped by happy or sad memory priming.
+
+**Drugs of interest [Dosage levels 1, 2, 3]:**
+
+-   **A** — Alprazolam (Xanax, long-term) [1 mg / 3 mg / 5 mg]
+-   **T** — Triazolam (Halcion, short-term) [0.25 mg / 0.5 mg / 0.75 mg]
+-   **S** — Sugar Tablet (Placebo) [1 tab / 2 tabs / 3 tabs]
+
+Dosages follow a 1:1 ratio to ensure validity. Happy or sad memories were primed 10 minutes prior to testing. Participants were tested every day for one week to mimic addiction.
+
+**Variables in the dataset:**
+
+| Variable                  | Type       | Description                       |
+|---------------------------|------------|-----------------------------------|
+| `first_name`, `last_name` | Nominal    | Participant identifier            |
+| `age`                     | Continuous | Age in years                      |
+| `Happy_Sad_group`         | Nominal    | Memory priming condition (H / S)  |
+| `Dosage`                  | Ordinal    | Dosage level (1 / 2 / 3)          |
+| `Drug`                    | Nominal    | Drug administered (A / T / S)     |
+| `Mem_Score_Before`        | Continuous | Memory score before drug          |
+| `Mem_Score_After`         | Continuous | Memory score after drug           |
+| `Diff`                    | Continuous | Score difference (After − Before) |
+
+------------------------------------------------------------------------
+
+## Step 2: Load and Clean the Data
+
+### Task 1: Load and Inspect
+
+The `_mod` version of the dataset includes missing values and a deliberate data entry error.
+
+```{r load-data}
+data <- read_tsv("data/Islander_data_mod.tsv", show_col_types = FALSE)
+
+# Structure: variable names, types, first values
+str(data)
+```
+
+**Task:** Add code to display the first few rows and summarize the dataset.
+
+```{r inspect}
+# Display the first few rows (hint: head())
+
+
+# Summarize the dataset (hint: summary())
+
+```
+
+### Task 2: Handle Missing Values
+
+Data cleaning includes: handling missing values, removing duplicates, correcting errors, and fixing data types.
+
+```{r missing-values}
+# Total number of missing values
+sum(is.na(data))
+
+# Identify which rows have missing values
+rowSums(is.na(data))
+
+# Which rows could be rescued? Which should be removed?
+# (hint: complete.cases() selects rows with no NAs)
+
+```
+
+```{r duplicates}
+# Check for and remove duplicate rows
+data <- data[!duplicated(data), ]
+```
+
+> **OpenRefine tip:** For manually collected data with many inconsistencies (typos, inconsistent formatting), [OpenRefine](https://openrefine.org/) is often more efficient than R for cleaning before import.
+
+**Concept Check — When to impute vs. remove missing values?**
+
+If rows with missing values are few and appear to be missing at random (MAR or MCAR), removing them is usually acceptable. If they are systematically missing (e.g., always in one condition), removal can introduce bias — imputation or explicit modelling of missingness is then preferable. In small datasets, imputation is often better than losing data; in large datasets, removal is less costly.
+
+------------------------------------------------------------------------
+
+## Step 3: Initial Data Exploration
+
+### Tukey's Five-Number Summary
+
+Tukey promoted the **five-number summary** as a robust description of numerical distributions: minimum, lower quartile (Q1), median, upper quartile (Q3), and maximum. Unlike the mean and standard deviation, quartiles are resistant to outliers and heavy-tailed distributions.
+
+```{r summary-stats}
+# Five-number summary (plus mean) for all numeric columns
+summary(data)
+```
+
+The `Diff` column is our main outcome — memory score change. Notice whether the median and mean differ much (a sign of skew).
+
+### Iterating Through Variables: One at a Time
+
+A disciplined EDA starts by understanding each variable individually before combining them. Work through **every column** — not just the interesting ones.
+
+#### Numerical Variables
+
+```{r numerical-single}
+# --- age ---
+# Histogram: look at distribution shape, gaps, unusual peaks
+ggplot(data, aes(x = age)) +
+  geom_histogram(binwidth = 2, fill = "steelblue", color = "white") +
+  theme_minimal() +
+  labs(title = "Distribution of Age", x = "Age (years)", y = "Count")
+
+# Boxplot: look for outliers (points beyond whiskers)
+ggplot(data, aes(y = age)) +
+  geom_boxplot(fill = "steelblue", alpha = 0.7) +
+  theme_minimal() +
+  labs(title = "Boxplot of Age")
+
+# --- Mem_Score_Before and Mem_Score_After ---
+# Reshape to long format so we can compare both in one plot
+data %>%
+  pivot_longer(cols = c(Mem_Score_Before, Mem_Score_After),
+               names_to = "Timepoint", values_to = "Score") %>%
+  ggplot(aes(x = Score, fill = Timepoint)) +
+  geom_histogram(binwidth = 5, alpha = 0.6, position = "identity") +
+  theme_minimal() +
+  labs(title = "Memory Score Distribution Before and After")
+
+# --- Diff: the main outcome ---
+ggplot(data, aes(x = Diff)) +
+  geom_histogram(binwidth = 2, fill = "tomato", color = "white") +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  theme_minimal() +
+  labs(title = "Distribution of Memory Score Change (Diff)",
+       subtitle = "Negative = memory got worse; Positive = memory improved")
+```
+
+> **Tip:** When the distribution looks unusual — a gap, a spike, an extreme value — stop and investigate. Use `coord_cartesian()` to zoom in without removing data points, which lets you see the outlier region more clearly.
+
+```{r zoom-outlier}
+# Zoom into a suspicious region without filtering out data
+ggplot(data, aes(x = age)) +
+  geom_histogram(binwidth = 1, fill = "steelblue", color = "white") +
+  coord_cartesian(xlim = c(80, 120)) +  # zoom in — data outside range still included in counts
+  theme_minimal() +
+  labs(title = "Zooming into the high-age region")
+```
+
+If you find an obvious data entry error (e.g., age = 999), replace it with `NA` rather than deleting the row — other columns in that row may still be valid:
+
+```{r fix-outlier}
+# Replace implausible values with NA rather than removing the whole row
+data <- data %>%
+  mutate(age = if_else(age > 120, NA_real_, age))
+```
+
+#### Categorical Variables
+
+```{r categorical-single}
+# Frequency tables
+table(data$Drug)
+table(data$Dosage)
+table(data$Happy_Sad_group)
+
+# dplyr alternative (returns a data frame, easier to pipe further)
+data %>% count(Drug, sort = TRUE)
+
+# Bar charts for each categorical variable
+ggplot(data, aes(x = Drug)) +
+  geom_bar(fill = "steelblue") +
+  theme_minimal() +
+  labs(title = "Number of Participants per Drug")
+
+ggplot(data, aes(x = factor(Dosage))) +
+  geom_bar(fill = "steelblue") +
+  theme_minimal() +
+  labs(title = "Number of Participants per Dosage Level", x = "Dosage")
+
+ggplot(data, aes(x = Happy_Sad_group)) +
+  geom_bar(fill = "steelblue") +
+  theme_minimal() +
+  labs(title = "Memory Priming Group")
+```
+
+### Task 3: Continue Exploring
+
+Did you find the peculiar row? What might have caused it, and can you fix it?
+
+Can you identify — or make a reasonable guess about — what distribution each numerical column follows?
+
+**Task:** Create at least two more plots for variables you have not yet examined.
+
+### Concept Check
+
+**Q: Why use `coord_cartesian()` to zoom in rather than filtering the data?**
+
+Filtering changes what data is used in the plot — it can distort bin counts in a histogram or remove points from a scatterplot. `coord_cartesian()` only changes the viewing window; all data still contributes to the calculation. This is important when you want to *see* an outlier region without excluding it from the summary.
+
+**Q: What are the key steps involved in the EDA process?**
+
+Understand the data context → Data cleaning → Initial exploration (single variable) → Normalization (if needed) → Detailed exploration (relationships between variables) → Formulate hypotheses. EDA is iterative — you will loop back to earlier steps as you learn more.
+
+------------------------------------------------------------------------
+
+## Step 4: Data Normalization
+
+Normalization scales variables to a comparable range. It is important when variables have different units or scales, particularly before clustering, PCA, or distance-based methods.
+
+### When to Normalize
+
+-   Variables have different units or scales (e.g., age in years vs. memory score)
+-   Before applying scale-sensitive algorithms: k-means clustering, PCA, neural networks
+-   Before distance-based methods: k-NN, hierarchical clustering
+-   Before regularized regression (ridge, lasso) where coefficient magnitudes matter
+
+### Common Methods
+
+```{r normalization-methods, eval=FALSE}
+# Min-Max Scaling: rescales to [0, 1]
+# Use when you need bounded output; sensitive to outliers
+data$variable_minmax <- (data$variable - min(data$variable, na.rm = TRUE)) /
+                        (max(data$variable, na.rm = TRUE) - min(data$variable, na.rm = TRUE))
+
+# Z-Score Standardization: mean = 0, standard deviation = 1
+# Most common; assumes roughly normal distribution
+data$variable_Z <- scale(data$variable)
+
+# Log Transformation: compresses right-skewed distributions
+# Useful for count data, concentrations, abundances; add 1 to handle zeros
+data$variable_log <- log(data$variable + 1)
+
+# VSN (Variance Stabilizing Normalization): useful for -omics data
+# where variance scales with the mean (e.g., RNA-seq, proteomics)
+library(vsn)
+data$variable_vsn <- vsn::vsn2(data$variable)
+```
+
+### Task 4: Apply Z-Score Transformation
+
+Even if no column strictly requires normalization for this analysis, the practice is valuable. Apply Z-score transformation to the `Diff` column; create a new column `Diff_Z` rather than overwriting the original.
+
+```{r normalize}
+# Z-score transformation of Diff (hint: scale())
+
+```
+
+**Concept Check — When should you avoid normalization?**
+
+Normalization can obscure meaningful scale differences. For example, if you are comparing absolute effect sizes across groups, normalizing may make small and large effects look equivalent. Always ask: does the algorithm I'm using require normalization? (Linear regression: generally no. PCA: yes. Pearson correlation: no, but data should be on a consistent scale to interpret results.)
+
+------------------------------------------------------------------------
+
+## Step 5: Detailed Data Exploration — Relationships Between Variables
+
+Once you understand each variable individually, look for **covariation**: how variables change together.
+
+### Numerical × Numerical: Correlation
+
+```{r correlation}
+# Pearson correlation matrix for all numeric columns
+cor(data[, sapply(data, is.numeric)], use = "complete.obs")
+```
+
+```{r scatter-age-diff}
+# Scatterplot: age vs Diff
+ggplot(data, aes(x = age, y = Diff)) +
+  geom_point(alpha = 0.4) +
+  geom_smooth(method = "lm", se = TRUE, color = "tomato") +
+  theme_minimal() +
+  labs(title = "Age vs. Memory Score Change",
+       x = "Age (years)", y = "Diff (After − Before)")
+```
+
+> **Overplotting:** When many points overlap, transparency (`alpha`) helps reveal density. For very large datasets, `geom_hex()` or `geom_bin2d()` bin the 2D plane and show counts:
+
+```{r overplotting-solutions}
+# Hexbin plot — useful when many points overlap
+# (works best with larger datasets; shown here for demonstration)
+ggplot(data, aes(x = Mem_Score_Before, y = Mem_Score_After)) +
+  geom_bin2d() + 
+  scale_fill_viridis_c() +
+  theme_minimal() +
+  labs(title = "Memory Score Before vs. After (hexbin)")
+```
+
+### Numerical × Categorical: Compare Groups
+
+```{r numerical-categorical}
+# Boxplot with fct_reorder to sort groups by median Diff
+# This reveals the pattern much more clearly than alphabetical ordering
+ggplot(data, aes(x = fct_reorder(Drug, Diff, median), y = Diff, fill = Drug)) +
+  geom_boxplot() +
+  theme_minimal() +
+  labs(title = "Memory Score Change by Drug (ordered by median)",
+       x = "Drug", y = "Diff")
+
+# Violin plot: shows full distribution shape, not just quartiles
+ggplot(data, aes(x = Drug, y = Diff, fill = Drug)) +
+  geom_violin(trim = FALSE) +
+  geom_boxplot(width = 0.1, fill = "white", outlier.shape = NA) +
+  theme_minimal() +
+  labs(title = "Distribution of Diff by Drug (violin + boxplot)")
+
+# Facet by Dosage to add a third variable
+ggplot(data, aes(x = Drug, y = Diff, fill = Drug)) +
+  geom_boxplot() +
+  facet_wrap(~Dosage, labeller = label_both) +
+  theme_minimal() +
+  labs(title = "Drug vs. Memory Score Change, by Dosage")
+```
+
+> **Tip:** `fct_reorder()` reorders a factor's levels by a summary statistic (default: median). Sorting categorical axes by the outcome variable almost always reveals patterns that alphabetical ordering hides.
+
+### Binning a Continuous Variable for Grouped Comparisons
+
+```{r cut-width}
+# Cut age into equal-width bins to compare Diff across age groups
+data %>%
+  mutate(age_group = cut_width(age, width = 10, boundary = 0)) %>%
+  ggplot(aes(x = age_group, y = Diff)) +
+  geom_boxplot(fill = "steelblue", alpha = 0.7) +
+  theme_minimal() +
+  labs(title = "Memory Score Change by Age Group", x = "Age Group", y = "Diff")
+```
+
+### Categorical × Categorical: Cross-Tabulation
+
+```{r cross-tab}
+# Cross-tabulation of Drug × Happy_Sad_group
+table(data$Drug, data$Happy_Sad_group)
+
+# As proportions within each drug group
+prop.table(table(data$Drug, data$Happy_Sad_group), margin = 1)
+
+# Heatmap of counts: two categorical variables
+data %>%
+  count(Drug, Happy_Sad_group) %>%
+  ggplot(aes(x = Drug, y = Happy_Sad_group, fill = n)) +
+  geom_tile() +
+  geom_text(aes(label = n), color = "white", size = 5) +
+  scale_fill_viridis_c() +
+  theme_minimal() +
+  labs(title = "Count of Participants by Drug and Memory Priming")
+```
+
+### Task 5: Explore Relationships Between Variables
+
+```{r task5, eval=FALSE}
+# 1. Does memory priming (Happy vs. Sad) interact with drug type?
+#    Try: aes(x = Drug, y = Diff, fill = Happy_Sad_group) + geom_boxplot(position = "dodge")
+
+# 2. Does dosage level modify the drug effect?
+
+# 3. Try combining three variables in one plot (color + facet)
+
+```
+
+### Heatmap of Correlation Matrix
+
+```{r heatmap}
+cor_matrix <- cor(data[, sapply(data, is.numeric)], use = "complete.obs")
+
+cor_matrix %>%
+  as.data.frame() %>%
+  rownames_to_column("Var1") %>%
+  pivot_longer(-Var1, names_to = "Var2", values_to = "value") %>%
+  ggplot(aes(Var1, Var2, fill = value)) +
+  geom_tile() +
+  geom_text(aes(label = round(value, 2)), size = 3) +
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white",
+                       midpoint = 0, limits = c(-1, 1)) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "Correlation Heatmap", fill = "r")
+```
+
+or use
+
+```{r}
+library(pheatmap)
+cor_matrix <- cor(data[, sapply(data, is.numeric)], use = "complete.obs")
+
+pheatmap(cor_matrix,display_numbers=TRUE, color=colorRampPalette(c("blue", "white", "red"))(50), breaks = seq(-1, 1, length.out = 51))
+```
+
+### Interactive Exploration with `explore`
+
+```{r explore-pkg, eval=FALSE}
+# install.packages("explore")
+library(explore)
+explore(data)
+```
+
+**Concept Check — What does a correlation coefficient of −0.8 tell you?**
+
+A strong negative linear relationship: as one variable increases, the other tends to decrease. Note that correlation measures only *linear* association — a correlation near 0 does not mean there is no relationship (it could be non-linear). Always plot the data alongside the correlation coefficient.
+
+------------------------------------------------------------------------
+
+# 4. Automated EDA Tools
+
+Automated EDA packages generate comprehensive reports with minimal code. They are excellent for a first-pass inspection of a new dataset. We demonstrate them with `palmerpenguins` — a dataset of penguin body measurements from three species across three Antarctic islands, which gives richer numeric variables for these tools.
+
+```{r penguins-setup}
+# install.packages("palmerpenguins")
+library(palmerpenguins)
+df <- penguins
+glimpse(df)
+```
+
+## DataExplorer
+
+Generates a full HTML report: missing values, distributions, correlations, PCA.
+
+```{r dataexplorer, eval=FALSE}
+library(DataExplorer)
+create_report(data)
+```
+
+Individual functions for interactive use:
+
+```{r dataexplorer-functions}
+library(DataExplorer)
+
+introduce(df)        # dataset overview
+plot_missing(df)     # missing value profile
+plot_histogram(df)   # distributions of all numeric columns
+plot_correlation(df, type = "continuous")  # correlation heatmap
+```
+
+## ExPanDaR
+
+Interactive Shiny app for panel data exploration.
+
+```{r expandar, eval=FALSE}
+library(ExPanDaR)
+ExPanD(data)
+```
+
+## dataMaid
+
+Generates a codebook-style HTML report with per-variable summaries, outlier flags, and coding checks.
+
+```{r datamaid, eval=FALSE}
+library(dataMaid)
+makeDataReport(data, output = "html", replace = TRUE)
+```
+
+> **When to use automated tools:** These give a fast, reliable first look. They catch issues (unexpected NAs, implausible ranges, skewed distributions) that manual inspection might miss. They do not, however, replace the domain-knowledge-driven exploration you have been doing above.
+
+------------------------------------------------------------------------
+
+# 5. Formulate Hypotheses
+
+Based on your exploration, formulate hypotheses. Keep in mind the circular reasoning warning: **hypotheses generated from this dataset must be tested on new data**.
+
+### Task 6: Document Your Hypotheses
+
+```{r hypotheses}
+# Example hypothesis:
+# Hypothesis: Higher dosages of Alprazolam (A) impair memory more than
+#             placebo (S), with the effect growing larger with age.
+# Observation that led to it: boxplot of Diff by Drug × Dosage showed
+#             decreasing median Diff for Drug A across dosage levels.
+# What is needed to test it: a new dataset with the same design,
+#             or a pre-registered experiment.
+
+# Add your own hypotheses below:
+```
+
+**Task:** Write at least two hypotheses. For each, document:
+
+1.  What pattern or observation led to the hypothesis
+2.  What additional data or analysis would be needed to test it properly
+
+------------------------------------------------------------------------
+
+# 6. Advanced Techniques
+
+## EDA with Many Variables: The Dimensionality Problem
+
+When a dataset has many numeric variables, pairwise plots and correlation matrices become unwieldy. **Dimensionality reduction** projects high-dimensional data into 2D or 3D while preserving as much structure as possible, enabling visual exploration.
+
+We use the `palmerpenguins` dataset here — four biological measurements (bill length, bill depth, flipper length, body mass) across three penguin species — as it provides a clean, biologically meaningful example with known structure.
+
+```{r penguins-prep}
+library(palmerpenguins)
+
+# Remove rows with missing values; keep numeric measurements + species label
+penguins_clean <- penguins %>%
+  drop_na() %>%
+  select(species, bill_length_mm, bill_depth_mm, flipper_length_mm, body_mass_g)
+
+penguins_num <- penguins_clean %>% select(-species)
+```
+
+### Pairs Plot: Pairwise Scatterplots
+
+Before reducing dimensions, a pairs plot shows all pairwise relationships at once.
+
+```{r pairs-plot}
+# install.packages("GGally")
+library(GGally)
+
+ggpairs(penguins_clean, aes(color = species, alpha = 0.6),
+        columns = 2:5) +
+  theme_minimal() +
+  labs(title = "Pairs Plot: Palmer Penguins Measurements by Species")
+```
+
+------------------------------------------------------------------------
+
+## PCA — Principal Component Analysis
+
+PCA is a **linear** method. It finds the directions (principal components) that explain the most variance in the data. It is interpretable and fast, but can miss non-linear structure. This approach assumes that data is linear, continuous and correlated. Not many outliers and at least 5 cases per variable would be needed.
+
+```{r pca}
+pca <- prcomp(penguins_num, scale. = TRUE)
+
+# Variance explained by each principal component
+summary(pca)
+
+# Scree plot: how much variance does each PC explain?
+pca_var <- data.frame(
+  PC = paste0("PC", 1:ncol(pca$x)),
+  var_explained = (pca$sdev^2) / sum(pca$sdev^2)
+)
+
+ggplot(pca_var, aes(x = PC, y = var_explained)) +
+  geom_col(fill = "steelblue") +
+  geom_line(aes(group = 1), color = "tomato", size = 1) +
+  geom_point(color = "tomato", size = 3) +
+  scale_y_continuous(labels = scales::percent) +
+  theme_minimal() +
+  labs(title = "PCA Scree Plot: Variance Explained per Component",
+       y = "Proportion of Variance Explained")
+```
+
+```{r pca-plot}
+# Scatter plot of first two PCs, colored by species
+pca_df <- as.data.frame(pca$x) %>%
+  bind_cols(species = penguins_clean$species)
+
+ggplot(pca_df, aes(x = PC1, y = PC2, color = species)) +
+  geom_point(alpha = 0.7, size = 2) +
+  theme_minimal() +
+  labs(title = "PCA: Penguins in Principal Component Space",
+       subtitle = paste0("PC1 explains ", round(pca_var$var_explained[1]*100, 1),
+                         "%, PC2 explains ", round(pca_var$var_explained[2]*100, 1), "%"))
+
+# Loadings: which original variables drive each PC?
+# Positive loading = variable increases with PC; negative = decreases
+pca$rotation
+```
+
+**What to look for:** Species that cluster together in PCA space share similar measurement profiles. Widely separated clusters indicate strong group differences. The loadings tell you *which* measurements drive the separation.
+
+------------------------------------------------------------------------
+
+## tSNE — t-Distributed Stochastic Neighbor Embedding
+
+tSNE is a **non-linear** method that preserves *local* structure — nearby points in high-dimensional space remain nearby in 2D. It is excellent for visualizing clusters but the distances between clusters are not meaningful, and the result varies with the random seed and `perplexity` parameter.
+
+```{r tsne}
+# install.packages("Rtsne")
+library(Rtsne)
+
+set.seed(42)
+tsne_result <- Rtsne(penguins_num, perplexity = 10, verbose = FALSE)
+
+tsne_df <- as.data.frame(tsne_result$Y) %>%
+  rename(tSNE1 = V1, tSNE2 = V2) %>%
+  bind_cols(species = penguins_clean$species)
+
+ggplot(tsne_df, aes(x = tSNE1, y = tSNE2, color = species)) +
+  geom_point(alpha = 0.7, size = 2) +
+  theme_minimal() +
+  labs(title = "tSNE: Penguins in Embedded Space",
+       subtitle = "Perplexity = 30; distances between clusters not interpretable")
+```
+
+> **Perplexity** controls the balance between local and global structure. Low perplexity (\~5) focuses on very local neighborhoods; high perplexity (\~50) considers broader context. Always try multiple values and check whether the cluster pattern is stable.
+
+------------------------------------------------------------------------
+
+## UMAP — Uniform Manifold Approximation and Projection
+
+UMAP is also **non-linear**, but it runs faster than tSNE and better preserves *global* structure (distances between clusters are more meaningful). It is now widely used in -omics data analysis (scRNA-seq, proteomics).
+
+```{r umap}
+# install.packages("umap")
+library(umap)
+
+set.seed(42)
+umap_result <- umap(penguins_num)
+
+umap_df <- as.data.frame(umap_result$layout) %>%
+  rename(UMAP1 = V1, UMAP2 = V2) %>%
+  bind_cols(species = penguins_clean$species)
+
+ggplot(umap_df, aes(x = UMAP1, y = UMAP2, color = species)) +
+  geom_point(alpha = 0.7, size = 2) +
+  theme_minimal() +
+  labs(title = "UMAP: Penguins in Embedded Space",
+       subtitle = "Faster than tSNE; global structure better preserved")
+```
+
+------------------------------------------------------------------------
+
+## Comparing PCA, tSNE, and UMAP Side by Side
+
+```{r dim-reduction-comparison}
+library(patchwork)
+
+p_pca <- ggplot(pca_df, aes(x = PC1, y = PC2, color = species)) +
+  geom_point(alpha = 0.7, size = 1.5) +
+  theme_minimal() + theme(legend.position = "none") +
+  labs(title = "PCA")
+
+p_tsne <- ggplot(tsne_df, aes(x = tSNE1, y = tSNE2, color = species)) +
+  geom_point(alpha = 0.7, size = 1.5) +
+  theme_minimal() + theme(legend.position = "none") +
+  labs(title = "tSNE")
+
+p_umap <- ggplot(umap_df, aes(x = UMAP1, y = UMAP2, color = species)) +
+  geom_point(alpha = 0.7, size = 1.5) +
+  theme_minimal() +
+  labs(title = "UMAP")
+
+p_pca + p_tsne + p_umap +
+  plot_annotation(
+    title = "Dimensionality Reduction: Palmer Penguins (4 measurements → 2D)",
+    theme = theme(plot.title = element_text(size = 13, face = "bold"))
+  )
+```
+
+| Method | Structure preserved | Interpretability | Speed | Common use |
+|---------------|---------------|---------------|---------------|---------------|
+| **PCA** | Global (linear) | High — axes are meaningful | Fast | First step, preprocessing |
+| **tSNE** | Local | Low — axes arbitrary | Slow | Cluster visualization |
+| **UMAP** | Local + some global | Moderate | Fast | -omics, large datasets |
+
+------------------------------------------------------------------------
+
+## Ordination / Gradient Analysis
+
+**Ordination** arranges samples in a lower-dimensional latent space such that samples near each other share similar attribute profiles. It is the standard approach in ecology and -omics for making sense of multivariate data.
+
+Common methods:
+
+-   **PCA** (above): linear, unconstrained
+-   **NMDS** (Non-metric Multidimensional Scaling): rank-based, robust to non-normality; widely used in community ecology
+
+```{r ordination-nmds, eval=FALSE}
+# install.packages("vegan")
+library(vegan)
+
+# NMDS on the penguin measurements (as illustration — usually for community matrices)
+nmds <- metaMDS(penguins_num, distance = "euclidean", k = 2, trymax = 100)
+
+nmds_df <- as.data.frame(nmds$points) %>%
+  bind_cols(species = penguins_clean$species)
+
+ggplot(nmds_df, aes(x = MDS1, y = MDS2, color = species)) +
+  geom_point(alpha = 0.7, size = 2) +
+  theme_minimal() +
+  labs(title = paste0("NMDS (stress = ", round(nmds$stress, 3), ")"),
+       subtitle = "Stress < 0.1 indicates a good fit")
+```
+
+> **Stress** is the NMDS goodness-of-fit measure: lower is better. A stress below 0.1 is generally considered acceptable; above 0.2 suggests the 2D representation distorts the data too much.
+
+------------------------------------------------------------------------
+
+# Conclusion
+
+You have worked through the full EDA cycle:
+
+1.  Understood the data context and experimental design
+2.  Cleaned and prepared the data
+3.  Explored each variable individually (variation)
+4.  Explored relationships between variables (covariation)
+5.  Applied normalization where appropriate
+6.  Used automated EDA tools for a rapid overview
+7.  Applied dimensionality reduction to handle many variables
+8.  Formulated hypotheses for further investigation
+
+EDA is **iterative** — revisit earlier steps as you learn more. The goal is to arrive at a clear, honest understanding of your data and to ask well-formed questions before committing to statistical testing or modeling.
+
+**Key reference resources:**
+
+-   [Data-to-Viz](https://www.data-to-viz.com/) — choosing the right chart type
+-   [R Graph Gallery](https://www.r-graph-gallery.com/) — R code for many plot types
+-   [R for Data Science, Chapter 10: EDA](https://r4ds.hadley.nz/EDA.html) — Hadley Wickham's treatment of EDA with tidyverse
